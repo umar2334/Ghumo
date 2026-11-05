@@ -1,3 +1,6 @@
+import 'dart:math' as math;
+
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -18,6 +21,33 @@ Future<void> main() async {
   ));
   final store = await AppStore.load(SharedPrefsStorage());
   runApp(GhumoApp(store: store, services: AppServices()));
+}
+
+/// Keeps the browser demo at phone width, since the app is designed for phones.
+class _PhoneFrame extends StatelessWidget {
+  const _PhoneFrame({required this.child});
+
+  static const double _maxWidth = 480;
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final media = MediaQuery.of(context);
+    final width = math.min(media.size.width, _maxWidth);
+    return ColoredBox(
+      color: const Color(0xFF050B0A),
+      child: Center(
+        child: SizedBox(
+          width: width,
+          child: MediaQuery(
+            data: media.copyWith(size: Size(width, media.size.height)),
+            child: ClipRect(child: child),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class GhumoApp extends StatefulWidget {
@@ -43,6 +73,7 @@ class _GhumoAppState extends State<GhumoApp> {
         title: 'Ghumo',
         debugShowCheckedModeBanner: false,
         theme: buildAppTheme(),
+        builder: kIsWeb ? (context, child) => _PhoneFrame(child: child!) : null,
         home: widget.store.onboarded ? const MainShell() : const SplashScreen(),
       ),
     );
