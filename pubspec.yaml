@@ -1,29 +1,46 @@
 name: ghumo
-description: Ghumo - Explore the Unexplored. A travel exploration app for Pakistan.
+description: Ghumo - Explore the Unexplored. A travel companion for Pakistan.
 publish_to: 'none'
-
 version: 1.0.0+1
 
 environment:
-  sdk: '>=3.1.5 <4.0.0'
+  sdk: '>=3.8.0 <4.0.0'
 
 dependencies:
   flutter:
     sdk: flutter
-  cupertino_icons: ^1.0.2
-  percent_indicator: ^4.2.3
-  fl_chart: ^0.65.0
-  google_fonts: ^4.0.4
-  http: ^1.1.0
-  flutter_map: ^6.1.0
-  latlong2: ^0.9.0
+  cached_network_image: ^3.4.1
+  flutter_map: ^6.2.1
+  geolocator: ^13.0.2
+  http: ^1.2.2
+  latlong2: ^0.9.1
+  share_plus: ^10.1.4
+  shared_preferences: ^2.5.3
+  url_launcher: ^6.3.2
 
 dev_dependencies:
+  flutter_launcher_icons: ^0.14.4
+  flutter_lints: ^6.0.0
   flutter_test:
     sdk: flutter
-  flutter_lints: ^2.0.0
 
 flutter:
   uses-material-design: true
-  assets:
-    - assets/images/
+  fonts:
+    - family: Inter
+      fonts:
+        - asset: assets/fonts/Inter.ttf
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  remove_alpha_ios: true
+  image_path: assets/icon/icon.png
+  adaptive_icon_background: "#060F0C"
+  adaptive_icon_foreground: assets/icon/icon_foreground.png
+  min_sdk_android: 24
+  web:
+    generate: true
+    image_path: assets/icon/icon.png
+    background_color: "#060F0C"
+    theme_color: "#060F0C"

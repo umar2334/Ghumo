@@ -1,890 +1,420 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
-import '../theme/app_theme.dart';
-import '../models/models.dart';
-import '../state/app_state.dart';
-import '../services/weather_service.dart';
+import 'package:latlong2/latlong.dart';
+import 'package:share_plus/share_plus.dart';
 
-class PlannerScreen extends StatefulWidget {
+import '../data/destinations.dart';
+import '../models/models.dart';
+import '../state/app_scope.dart';
+import '../theme/app_text.dart';
+import '../theme/app_theme.dart';
+import '../utils/format.dart';
+import '../widgets/common.dart';
+import '../widgets/trip_form.dart';
+import 'expenses_screen.dart';
+
+/// Plain-text itinerary, used for sharing.
+String itineraryText(Trip trip) {
+  final b = StringBuffer(trip.name);
+  if (trip.budget > 0) b.write('\nBudget: ${formatPkr(trip.budget)}');
+  b.writeln('\n');
+  for (var i = 0; i < trip.stops.length; i++) {
+    final s = trip.stops[i];
+    b.write('${i + 1}. ${s.day == null ? '' : 'Day ${s.day}: '}${s.name}${s.done ? ' (done)' : ''}\n');
+    if (s.notes != null) b.write('   ${s.notes}\n');
+  }
+  b.write('\nPlanned with Ghumo');
+  return b.toString();
+}
+
+class PlannerScreen extends StatelessWidget {
   const PlannerScreen({super.key});
 
   @override
-  State<PlannerScreen> createState() => _PlannerScreenState();
-}
-
-class _PlannerScreenState extends State<PlannerScreen> {
-  WeatherData? _weather;
-
-  @override
-  void initState() {
-    super.initState();
-    // Listen for state changes
-    AppState.stops.addListener(_onStopsChanged);
-    AppState.expenses.addListener(_onExpensesChanged);
-    // Fetch weather for Hunza (current expedition)
-    WeatherService.fetchWeather(36.3167, 74.6500).then((w) {
-      if (mounted) setState(() => _weather = w);
-    });
-  }
-
-  void _onStopsChanged() => setState(() {});
-  void _onExpensesChanged() => setState(() {});
-
-  @override
-  void dispose() {
-    AppState.stops.removeListener(_onStopsChanged);
-    AppState.expenses.removeListener(_onExpensesChanged);
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
+    final store = AppScope.store(context);
+    final trip = store.activeTrip;
+    if (trip == null) {
+      return Scaffold(
+        body: SafeArea(
+          child: Center(
+            child: SingleChildScrollView(
+              child: EmptyState(
+                icon: Icons.route_rounded,
+                title: 'Plan your first trip',
+                message: 'Build a day-by-day route, track your budget, and share the itinerary.',
+                actions: [
+                  ElevatedButton(
+                    key: const Key('new-trip'),
+                    onPressed: () => showTripForm(context),
+                    child: Text('Create a trip', style: txt(15, weight: 700, color: Colors.black)),
+                  ),
+                  OutlinedButton(
+                    key: const Key('sample-trip'),
+                    onPressed: store.createSampleTrip,
+                    child: Text('Try a sample trip', style: txt(15, weight: 600, color: AppColors.primary)),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
     return Scaffold(
-      backgroundColor: AppColors.background,
       floatingActionButton: FloatingActionButton(
-        onPressed: () => _showAddStopDialog(context),
+        key: const Key('add-stop'),
+        tooltip: 'Add stop',
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.black,
         shape: const CircleBorder(),
-        child: const Icon(Icons.add_rounded, size: 26),
+        onPressed: () => _showStopForm(context, trip),
+        child: const Icon(Icons.add_rounded),
       ),
       body: SafeArea(
-        child: CustomScrollView(
-          slivers: [
-            // Top bar
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-                child: Row(children: [
-                  Text('GHUMO',
-                      style: GoogleFonts.inter(
-                        color: AppColors.primary,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 2,
-                      )),
-                  const Spacer(),
-                  IconButton(
-                    onPressed: () => _showOptionsMenu(context),
-                    icon: const Icon(Icons.more_horiz_rounded,
-                        color: AppColors.textSecondary),
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                  ),
+        child: ListView(padding: const EdgeInsets.fromLTRB(20, 12, 20, 96), children: [
+          Row(children: [
+            Expanded(
+              child: InkWell(
+                onTap: () => _showTripSwitcher(context),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  const SectionLabel('Current trip'),
+                  const SizedBox(height: 4),
+                  Row(children: [
+                    Flexible(child: Text(trip.name, maxLines: 2, overflow: TextOverflow.ellipsis, style: txt(24, weight: 800))),
+                    const Icon(Icons.expand_more_rounded, color: AppColors.textSecondary),
+                  ]),
                 ]),
               ),
             ),
-
-            // Expedition header
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(children: [
-                      Text('CURRENT EXPEDITION',
-                          style: GoogleFonts.inter(
-                              color: AppColors.primary,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              letterSpacing: 2)),
-                      const Spacer(),
-                      if (_weather != null) ...[
-                        Text(_weather!.icon,
-                            style: const TextStyle(fontSize: 16)),
-                        const SizedBox(width: 4),
-                        Text(_weather!.tempStr,
-                            style: GoogleFonts.inter(
-                                color: AppColors.primary,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w700)),
-                      ],
-                    ]),
-                    const SizedBox(height: 6),
-                    RichText(
-                      text: TextSpan(children: [
-                        TextSpan(
-                            text: 'HUNZA ',
-                            style: GoogleFonts.inter(
-                                color: AppColors.textPrimary,
-                                fontSize: 30,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: 1)),
-                        TextSpan(
-                            text: 'VALLEY',
-                            style: GoogleFonts.inter(
-                                color: AppColors.primary,
-                                fontSize: 30,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: 1)),
-                      ]),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'Managing your 7-day northern odyssey\nthrough the Karakoram.',
-                      style: GoogleFonts.inter(
-                          color: AppColors.textSecondary,
-                          fontSize: 13,
-                          height: 1.5),
-                    ),
-                  ],
-                ),
-              ),
+            IconButton(
+              tooltip: 'Trip options',
+              icon: const Icon(Icons.more_horiz_rounded, color: AppColors.textSecondary),
+              onPressed: () => _showOptions(context, trip),
             ),
-
-            // Budget tracker
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
-                child: _BudgetCard(onEditBudget: () => _showEditBudgetDialog(context)),
-              ),
-            ),
-
-            // Timeline header
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 28, 20, 8),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('Trip Timeline',
-                        style: GoogleFonts.inter(
-                            color: AppColors.textPrimary,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600)),
-                    Text(
-                        '${AppState.stops.value.where((s) => s.isCompleted).length}/${AppState.stops.value.length} done',
-                        style: GoogleFonts.inter(
-                            color: AppColors.textSecondary, fontSize: 13)),
-                  ],
-                ),
-              ),
-            ),
-
-            // Timeline
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
-                child: Column(
-                  children: List.generate(AppState.stops.value.length, (i) {
-                    final stop = AppState.stops.value[i];
-                    return _TimelineStop(
-                      stop: stop,
-                      isLast: i == AppState.stops.value.length - 1,
-                      onToggle: () {
-                        AppState.toggleComplete(i);
-                      },
-                    );
-                  }),
-                ),
-              ),
-            ),
-
-            const SliverToBoxAdapter(child: SizedBox(height: 100)),
+          ]),
+          if (trip.isSample) ...[
+            const SizedBox(height: 8),
+            Text('This is sample data. Delete it from trip options whenever you like.', style: txt(12, color: AppColors.warning)),
           ],
-        ),
-      ),
-    );
-  }
-
-  void _showAddStopDialog(BuildContext context) {
-    final nameCtrl = TextEditingController();
-    final descCtrl = TextEditingController();
-    String selectedPhase = tripPhases[0];
-
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: AppColors.card,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setModalState) => Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
-            left: 20,
-            right: 20,
-            top: 20,
-          ),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                    color: AppColors.textMuted,
-                    borderRadius: BorderRadius.circular(2))),
-            const SizedBox(height: 20),
-            Text('Add Trip Stop',
-                style: GoogleFonts.inter(
-                    color: AppColors.textPrimary,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700)),
-            const SizedBox(height: 20),
-
-            // Phase selector
-            Row(children: [
-              Text('Phase',
-                  style: GoogleFonts.inter(
-                      color: AppColors.textSecondary, fontSize: 13)),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  decoration: BoxDecoration(
-                    color: AppColors.surface,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: AppColors.divider),
-                  ),
-                  child: DropdownButtonHideUnderline(
-                    child: DropdownButton<String>(
-                      value: selectedPhase,
-                      dropdownColor: AppColors.card,
-                      style: GoogleFonts.inter(
-                          color: AppColors.textPrimary,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500),
-                      items: tripPhases
-                          .map((p) => DropdownMenuItem(
-                              value: p,
-                              child: Text(p)))
-                          .toList(),
-                      onChanged: (v) =>
-                          setModalState(() => selectedPhase = v!),
-                    ),
-                  ),
-                ),
-              ),
-            ]),
-            const SizedBox(height: 14),
-
-            TextField(
-              controller: nameCtrl,
-              style: GoogleFonts.inter(
-                  color: AppColors.textPrimary, fontSize: 14),
-              decoration: const InputDecoration(
-                hintText: 'Stop name (e.g. Passu Cones)',
-                prefixIcon: Icon(Icons.place_rounded,
-                    color: AppColors.textMuted),
-              ),
-            ),
-            const SizedBox(height: 12),
-
-            TextField(
-              controller: descCtrl,
-              maxLines: 2,
-              style: GoogleFonts.inter(
-                  color: AppColors.textPrimary, fontSize: 14),
-              decoration: const InputDecoration(
-                hintText: 'Description (optional)',
-                prefixIcon: Icon(Icons.notes_rounded,
-                    color: AppColors.textMuted),
-                contentPadding:
-                    EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              ),
-            ),
-            const SizedBox(height: 20),
-
-            SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: ElevatedButton.icon(
-                onPressed: () {
-                  if (nameCtrl.text.trim().isEmpty) return;
-                  AppState.addStop(TripStop(
-                    number: 0,
-                    phase: selectedPhase,
-                    name: nameCtrl.text.trim(),
-                    description: descCtrl.text.trim().isEmpty
-                        ? null
-                        : descCtrl.text.trim(),
-                  ));
-                  Navigator.pop(ctx);
-                },
-                icon: const Icon(Icons.add_rounded),
-                label: Text('Add to Timeline',
-                    style: GoogleFonts.inter(
-                        fontWeight: FontWeight.w700, fontSize: 15)),
-                style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: Colors.black,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12))),
-              ),
-            ),
+          const SizedBox(height: 16),
+          _BudgetSummary(trip: trip),
+          const SizedBox(height: 24),
+          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+            Text('Timeline', style: txt(18, weight: 600)),
+            Text('${trip.completedStops}/${trip.stops.length} done', style: txt(13, color: AppColors.textSecondary)),
           ]),
-        ),
+          const SizedBox(height: 12),
+          if (trip.stops.isEmpty)
+            const EmptyState(
+              icon: Icons.add_location_alt_rounded,
+              title: 'No stops yet',
+              message: 'Tap + to add a stop, or use "Add to trip" on any destination.',
+            ),
+          for (var i = 0; i < trip.stops.length; i++)
+            _StopCard(trip: trip, stop: trip.stops[i], index: i),
+        ]),
       ),
     );
   }
 
-  void _showEditBudgetDialog(BuildContext context) {
-    final ctrl = TextEditingController(
-        text: AppState.totalBudget.value.toStringAsFixed(0));
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        backgroundColor: AppColors.card,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text('Edit Budget',
-            style: GoogleFonts.inter(
-                color: AppColors.textPrimary, fontWeight: FontWeight.w700)),
-        content: TextField(
-          controller: ctrl,
-          keyboardType: TextInputType.number,
-          style: GoogleFonts.inter(
-              color: AppColors.textPrimary, fontSize: 20,
-              fontWeight: FontWeight.w700),
-          decoration: InputDecoration(
-            prefixText: '\$ ',
-            prefixStyle: GoogleFonts.inter(
-                color: AppColors.primary, fontSize: 20,
-                fontWeight: FontWeight.w700),
-          ),
-          autofocus: true,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('Cancel',
-                style: GoogleFonts.inter(color: AppColors.textMuted)),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              final v = double.tryParse(ctrl.text);
-              if (v != null && v > 0) AppState.updateBudget(v);
-              Navigator.pop(context);
+  void _showTripSwitcher(BuildContext context) {
+    showAppSheet<void>(context, builder: (sheet) {
+      final store = AppScope.store(sheet);
+      return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        const SheetTitle('Your trips'),
+        for (final t in store.trips)
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(
+              t.id == store.activeTrip?.id ? Icons.radio_button_checked_rounded : Icons.radio_button_off_rounded,
+              color: AppColors.primary,
+            ),
+            title: Text(t.name, style: txt(15, weight: 500)),
+            subtitle: Text('${t.stops.length} stops · ${formatPkr(t.totalSpent)} spent', style: txt(12, color: AppColors.textMuted)),
+            onTap: () {
+              store.setActiveTrip(t);
+              Navigator.pop(sheet);
             },
-            style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: Colors.black),
-            child: Text('Save',
-                style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
           ),
-        ],
-      ),
-    );
-  }
-
-  void _showOptionsMenu(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: AppColors.card,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (_) => Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          _OptionTile(Icons.share_rounded, 'Share Itinerary', () => Navigator.pop(context)),
-          _OptionTile(Icons.picture_as_pdf_rounded, 'Export as PDF', () => Navigator.pop(context)),
-          _OptionTile(Icons.delete_outline_rounded, 'Clear Completed', () {
-            final list = AppState.stops.value
-                .where((s) => !s.isCompleted)
-                .toList();
-            AppState.stops.value = list;
-            Navigator.pop(context);
-          }, color: AppColors.danger),
-        ]),
-      ),
-    );
-  }
-}
-
-class _OptionTile extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-  final Color? color;
-  const _OptionTile(this.icon, this.label, this.onTap, {this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    final c = color ?? AppColors.textPrimary;
-    return ListTile(
-      leading: Icon(icon, color: c),
-      title: Text(label,
-          style: GoogleFonts.inter(color: c, fontWeight: FontWeight.w500)),
-      onTap: onTap,
-      contentPadding: EdgeInsets.zero,
-    );
-  }
-}
-
-// ─── Budget Card ─────────────────────────────────────────────────────────────
-
-class _BudgetCard extends StatelessWidget {
-  final VoidCallback onEditBudget;
-  const _BudgetCard({required this.onEditBudget});
-
-  @override
-  Widget build(BuildContext context) {
-    final spent = AppState.totalSpent;
-    final budget = AppState.totalBudget.value;
-    final pct = AppState.budgetPercent;
-    final remaining = AppState.remaining;
-    final overBudget = remaining < 0;
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.divider),
-      ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-          Text('BUDGET TRACKER',
-              style: GoogleFonts.inter(
-                  color: AppColors.textSecondary,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 1.5)),
-          GestureDetector(
-            onTap: onEditBudget,
-            child: Row(children: [
-              Text('${(pct * 100).round()}%',
-                  style: GoogleFonts.inter(
-                      color: overBudget ? AppColors.danger : AppColors.primary,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700)),
-              const SizedBox(width: 4),
-              const Icon(Icons.edit_rounded,
-                  color: AppColors.textMuted, size: 14),
-            ]),
-          ),
-        ]),
-        const SizedBox(height: 10),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(4),
-          child: LinearProgressIndicator(
-            value: pct,
-            backgroundColor: AppColors.divider,
-            valueColor: AlwaysStoppedAnimation<Color>(
-                overBudget ? AppColors.danger : AppColors.primary),
-            minHeight: 6,
-          ),
+        ActionTile(
+          icon: Icons.add_rounded,
+          label: 'New trip',
+          color: AppColors.primary,
+          onTap: () {
+            Navigator.pop(sheet);
+            showTripForm(context);
+          },
         ),
-        const SizedBox(height: 14),
-        Row(children: [
-          Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('SPENT',
-                  style: GoogleFonts.inter(
-                      color: AppColors.textMuted,
-                      fontSize: 10,
-                      letterSpacing: 1)),
-              Text('\$${spent.toStringAsFixed(2)}',
-                  style: GoogleFonts.inter(
-                      color: AppColors.textPrimary,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700)),
-            ]),
-          ),
-          Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(overBudget ? 'OVER BUDGET' : 'REMAINING',
-                  style: GoogleFonts.inter(
-                      color: AppColors.textMuted,
-                      fontSize: 10,
-                      letterSpacing: 1)),
-              Text(
-                '\$${remaining.abs().toStringAsFixed(2)}',
-                style: GoogleFonts.inter(
-                    color: overBudget ? AppColors.danger : AppColors.primary,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700),
-              ),
-            ]),
-          ),
-          Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('BUDGET',
-                  style: GoogleFonts.inter(
-                      color: AppColors.textMuted,
-                      fontSize: 10,
-                      letterSpacing: 1)),
-              Text('\$${budget.toStringAsFixed(0)}',
-                  style: GoogleFonts.inter(
-                      color: AppColors.textSecondary,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700)),
-            ]),
-          ),
-        ]),
-      ]),
-    );
+      ]);
+    });
+  }
+
+  void _showOptions(BuildContext context, Trip trip) {
+    showAppSheet<void>(context, builder: (sheet) {
+      return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        ActionTile(
+          icon: Icons.share_rounded,
+          label: 'Share itinerary',
+          onTap: () {
+            Navigator.pop(sheet);
+            Share.share(itineraryText(trip), subject: trip.name);
+          },
+        ),
+        ActionTile(
+          icon: Icons.edit_rounded,
+          label: 'Edit trip',
+          onTap: () {
+            Navigator.pop(sheet);
+            showTripForm(context, trip: trip);
+          },
+        ),
+        ActionTile(
+          icon: Icons.delete_outline_rounded,
+          label: 'Delete trip',
+          color: AppColors.danger,
+          onTap: () async {
+            Navigator.pop(sheet);
+            final ok = await confirm(
+              context,
+              title: 'Delete "${trip.name}"?',
+              body: 'Its stops and expenses will be removed too. This cannot be undone.',
+              action: 'Delete',
+            );
+            if (ok && context.mounted) AppScope.read(context).deleteTrip(trip);
+          },
+        ),
+      ]);
+    });
   }
 }
 
-// ─── Timeline ────────────────────────────────────────────────────────────────
+void _showStopForm(BuildContext context, Trip trip, {TripStop? stop}) {
+  showAppSheet<void>(context, builder: (_) => _StopForm(trip: trip, stop: stop));
+}
 
-class _TimelineStop extends StatelessWidget {
-  final TripStop stop;
-  final bool isLast;
-  final VoidCallback onToggle;
-
-  const _TimelineStop(
-      {required this.stop, required this.isLast, required this.onToggle});
+class _BudgetSummary extends StatelessWidget {
+  const _BudgetSummary({required this.trip});
+  final Trip trip;
 
   @override
   Widget build(BuildContext context) {
-    final dotColor = stop.isCompleted
-        ? AppColors.primary
-        : stop.isInProgress
-            ? AppColors.primary
-            : AppColors.textMuted;
-
-    return IntrinsicHeight(
-      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        // Dot + line
-        SizedBox(
-          width: 32,
-          child: Column(children: [
-            Container(
-              width: 12,
-              height: 12,
-              decoration: BoxDecoration(
-                color: stop.isCompleted ? AppColors.primary : Colors.transparent,
-                shape: BoxShape.circle,
-                border: Border.all(
-                    color: dotColor,
-                    width: stop.isCompleted ? 0 : 2),
-              ),
-              child: stop.isCompleted
-                  ? const Icon(Icons.check_rounded,
-                      color: Colors.black, size: 8)
-                  : null,
-            ),
-            if (!isLast)
-              Expanded(
-                child: Container(
-                  width: 1,
-                  color: stop.isCompleted
-                      ? AppColors.primary.withOpacity(0.4)
-                      : AppColors.divider,
-                ),
-              ),
+    final over = trip.isOverBudget;
+    return InkWell(
+      borderRadius: BorderRadius.circular(16),
+      onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ExpensesScreen())),
+      child: Ink(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppColors.divider),
+        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+            Text('Spent', style: txt(12, color: AppColors.textSecondary)),
+            const Icon(Icons.chevron_right_rounded, color: AppColors.textMuted, size: 18),
           ]),
-        ),
-
-        // Content
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.only(bottom: 24),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Row(children: [
-                Text('0${stop.number}',
-                    style: GoogleFonts.inter(
-                        color: AppColors.textMuted,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w800)),
-                const SizedBox(width: 10),
-                Text(stop.phase,
-                    style: GoogleFonts.inter(
-                        color: AppColors.textMuted,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w500,
-                        letterSpacing: 1.5)),
-                const Spacer(),
-                // Toggle complete checkbox
-                GestureDetector(
-                  onTap: onToggle,
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    width: 26,
-                    height: 26,
-                    decoration: BoxDecoration(
-                      color: stop.isCompleted
-                          ? AppColors.primary
-                          : Colors.transparent,
-                      borderRadius: BorderRadius.circular(7),
-                      border: Border.all(
-                        color: stop.isCompleted
-                            ? AppColors.primary
-                            : AppColors.textMuted,
-                        width: 1.5,
-                      ),
-                    ),
-                    child: stop.isCompleted
-                        ? const Icon(Icons.check_rounded,
-                            color: Colors.black, size: 16)
-                        : null,
-                  ),
-                ),
-              ]),
-              const SizedBox(height: 10),
-
-              if (stop.isCompleted && stop.temperature != null)
-                _CompletedCard(stop: stop)
-              else if (stop.isInProgress)
-                _InProgressCard(stop: stop)
-              else
-                _PendingCard(stop: stop),
-            ]),
-          ),
-        ),
-      ]),
+          Text(formatPkr(trip.totalSpent), style: txt(24, weight: 800)),
+          const SizedBox(height: 10),
+          if (trip.budget > 0) ...[
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: trip.budgetUsed,
+                minHeight: 6,
+                backgroundColor: AppColors.divider,
+                color: over ? AppColors.danger : AppColors.primary,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              over
+                  ? '${formatPkr(-trip.remaining)} over your ${formatPkr(trip.budget)} budget'
+                  : '${formatPkr(trip.remaining)} left of ${formatPkr(trip.budget)}',
+              style: txt(12, color: over ? AppColors.danger : AppColors.textSecondary),
+            ),
+          ] else
+            Text('No budget set. Add one from trip options.', style: txt(12, color: AppColors.textMuted)),
+        ]),
+      ),
     );
   }
 }
 
-class _CompletedCard extends StatelessWidget {
+class _StopCard extends StatelessWidget {
+  const _StopCard({required this.trip, required this.stop, required this.index});
+  final Trip trip;
   final TripStop stop;
-  const _CompletedCard({required this.stop});
+  final int index;
+
+  void _showActions(BuildContext context) {
+    final destination = destinationById(stop.destinationId);
+    final store = AppScope.read(context);
+    showAppSheet<void>(context, builder: (sheet) {
+      return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        SheetTitle(stop.name),
+        if (destination != null)
+          ActionTile(
+            icon: Icons.map_rounded,
+            label: 'Show on map',
+            onTap: () {
+              Navigator.pop(sheet);
+              AppScope.nav(context).showOnMap(MapTarget(LatLng(destination.lat, destination.lon), destination.id));
+            },
+          ),
+        ActionTile(
+          icon: Icons.edit_rounded,
+          label: 'Edit stop',
+          onTap: () {
+            Navigator.pop(sheet);
+            _showStopForm(context, trip, stop: stop);
+          },
+        ),
+        if (index > 0)
+          ActionTile(
+            icon: Icons.arrow_upward_rounded,
+            label: 'Move up',
+            onTap: () {
+              store.moveStop(trip, stop, -1);
+              Navigator.pop(sheet);
+            },
+          ),
+        if (index < trip.stops.length - 1)
+          ActionTile(
+            icon: Icons.arrow_downward_rounded,
+            label: 'Move down',
+            onTap: () {
+              store.moveStop(trip, stop, 1);
+              Navigator.pop(sheet);
+            },
+          ),
+        ActionTile(
+          icon: Icons.delete_outline_rounded,
+          label: 'Remove stop',
+          color: AppColors.danger,
+          onTap: () {
+            store.removeStop(trip, stop);
+            Navigator.pop(sheet);
+          },
+        ),
+      ]);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        color: AppColors.darkSlate.withOpacity(0.4),
-        border: Border.all(color: AppColors.primary.withOpacity(0.3)),
-      ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Container(
-          height: 130,
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: () => _showActions(context),
+        child: Ink(
+          padding: const EdgeInsets.fromLTRB(6, 8, 6, 8),
           decoration: BoxDecoration(
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [AppColors.darkSlate, AppColors.surface],
-            ),
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: stop.done ? AppColors.primary.withValues(alpha: 0.35) : AppColors.divider),
           ),
-          child: Stack(children: [
-            Center(
-              child: Icon(Icons.water_rounded,
-                  color: AppColors.primary.withOpacity(0.2), size: 80),
-            ),
-            Positioned(
-              top: 10,
-              left: 10,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                    color: Colors.black54,
-                    borderRadius: BorderRadius.circular(6)),
-                child: Text(stop.temperature ?? '',
-                    style: GoogleFonts.inter(
-                        color: AppColors.primary,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w600)),
-              ),
-            ),
-            Positioned(
-              top: 10,
-              right: 10,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                    color: AppColors.primary.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(
-                        color: AppColors.primary.withOpacity(0.5))),
-                child: Text('✓ DONE',
-                    style: GoogleFonts.inter(
-                        color: AppColors.primary,
-                        fontSize: 9,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 1)),
-              ),
-            ),
-            Positioned(
-              bottom: 12,
-              left: 12,
-              child: Text(stop.name,
-                  style: GoogleFonts.inter(
-                      color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.w800)),
-            ),
-          ]),
-        ),
-        Padding(
-          padding: const EdgeInsets.all(14),
           child: Row(children: [
-            if (stop.hotel != null) ...[
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('CHECK-IN',
-                    style: GoogleFonts.inter(
-                        color: AppColors.textMuted,
-                        fontSize: 9,
-                        letterSpacing: 1)),
-                Text(stop.hotel!,
-                    style: GoogleFonts.inter(
-                        color: AppColors.textPrimary,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600)),
-              ]),
-              const SizedBox(width: 20),
-            ],
-            if (stop.activity != null)
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('ACTIVITY',
-                    style: GoogleFonts.inter(
-                        color: AppColors.textMuted,
-                        fontSize: 9,
-                        letterSpacing: 1)),
-                Text(stop.activity!,
-                    style: GoogleFonts.inter(
-                        color: AppColors.textPrimary,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600)),
-              ]),
-            const Spacer(),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: AppColors.primary.withOpacity(0.15),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: AppColors.primary.withOpacity(0.3)),
-              ),
-              child: Text('DETAILS',
-                  style: GoogleFonts.inter(
-                      color: AppColors.primary,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700)),
+            Checkbox(
+              value: stop.done,
+              activeColor: AppColors.primary,
+              checkColor: Colors.black,
+              onChanged: (_) => AppScope.read(context).toggleStop(stop),
             ),
+            const SizedBox(width: 2),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                if (stop.day != null) Text('DAY ${stop.day}', style: txt(10, weight: 700, spacing: 1.2, color: AppColors.primary)),
+                Text(stop.name, style: txt(15, weight: 600, color: stop.done ? AppColors.textSecondary : AppColors.textPrimary)),
+                if (stop.notes != null) ...[
+                  const SizedBox(height: 3),
+                  Text(stop.notes!, style: txt(12, color: AppColors.textSecondary, height: 1.4)),
+                ],
+              ]),
+            ),
+            const Icon(Icons.more_vert_rounded, color: AppColors.textMuted, size: 18),
           ]),
         ),
-      ]),
+      ),
     );
   }
 }
 
-class _InProgressCard extends StatelessWidget {
-  final TripStop stop;
-  const _InProgressCard({required this.stop});
+class _StopForm extends StatefulWidget {
+  const _StopForm({required this.trip, this.stop});
+  final Trip trip;
+  final TripStop? stop;
 
   @override
-  Widget build(BuildContext context) {
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Container(
-        height: 110,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(14),
-          color: AppColors.surface,
-          border: Border.all(color: AppColors.primary.withOpacity(0.3)),
-        ),
-        child: Stack(children: [
-          Center(child: Icon(Icons.terrain_rounded,
-              color: AppColors.textMuted, size: 50)),
-          Positioned(
-            top: 10,
-            left: 10,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: AppColors.primary.withOpacity(0.15),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Text('● IN PROGRESS',
-                  style: GoogleFonts.inter(
-                      color: AppColors.primary,
-                      fontSize: 9,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.5)),
-            ),
-          ),
-        ]),
-      ),
-      const SizedBox(height: 12),
-      Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-        Text(stop.name,
-            style: GoogleFonts.inter(
-                color: AppColors.textPrimary,
-                fontSize: 17,
-                fontWeight: FontWeight.w700)),
-        const Icon(Icons.more_vert_rounded,
-            color: AppColors.textMuted, size: 18),
-      ]),
-      if (stop.description != null) ...[
-        const SizedBox(height: 4),
-        Text(stop.description!,
-            style: GoogleFonts.inter(
-                color: AppColors.textSecondary, fontSize: 12, height: 1.5)),
-      ],
-      if (stop.tags != null && stop.tags!.isNotEmpty) ...[
-        const SizedBox(height: 10),
-        Wrap(
-          spacing: 6,
-          runSpacing: 6,
-          children: stop.tags!.map((tag) => Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-            decoration: BoxDecoration(
-              color: AppColors.primary.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: AppColors.primary.withOpacity(0.3)),
-            ),
-            child: Text(tag,
-                style: GoogleFonts.inter(
-                    color: AppColors.primary,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600)),
-          )).toList(),
-        ),
-      ],
-      const SizedBox(height: 12),
-      Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-              color: AppColors.primary.withOpacity(0.25), width: 1),
-        ),
-        child: Row(children: [
-          const Icon(Icons.add_circle_outline_rounded,
-              color: AppColors.primary, size: 16),
-          const SizedBox(width: 8),
-          Text('Add an afternoon activity...',
-              style: GoogleFonts.inter(
-                  color: AppColors.textMuted, fontSize: 12)),
-          const Spacer(),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-            decoration: BoxDecoration(
-              color: AppColors.primary.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(5),
-            ),
-            child: Text('SUGGESTED: HOPPER GLACIER',
-                style: GoogleFonts.inter(
-                    color: AppColors.primary,
-                    fontSize: 8,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0.5)),
-          ),
-        ]),
-      ),
-    ]);
-  }
+  State<_StopForm> createState() => _StopFormState();
 }
 
-class _PendingCard extends StatelessWidget {
-  final TripStop stop;
-  const _PendingCard({required this.stop});
+class _StopFormState extends State<_StopForm> {
+  final _formKey = GlobalKey<FormState>();
+  late final _name = TextEditingController(text: widget.stop?.name);
+  late final _day = TextEditingController(text: widget.stop?.day?.toString());
+  late final _notes = TextEditingController(text: widget.stop?.notes);
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _day.dispose();
+    _notes.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    if (!_formKey.currentState!.validate()) return;
+    final store = AppScope.read(context);
+    final name = _name.text.trim();
+    final day = int.tryParse(_day.text.trim());
+    final notes = _notes.text.trim().isEmpty ? null : _notes.text.trim();
+    if (widget.stop == null) {
+      store.addStop(widget.trip, name: name, day: day, notes: notes);
+    } else {
+      store.updateStop(widget.stop!, name: name, day: day, notes: notes);
+    }
+    Navigator.pop(context);
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppColors.surface.withOpacity(0.4),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.divider.withOpacity(0.5)),
-      ),
-      child: Row(children: [
-        const Icon(Icons.lock_clock_rounded,
-            color: AppColors.textMuted, size: 20),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Text(
-            stop.description ?? 'Planning in progress for ${stop.name}',
-            style: GoogleFonts.inter(
-                color: AppColors.textMuted,
-                fontSize: 13,
-                fontStyle: FontStyle.italic),
-          ),
+    return Form(
+      key: _formKey,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        SheetTitle(widget.stop == null ? 'Add stop' : 'Edit stop'),
+        TextFormField(
+          key: const Key('stop-name'),
+          controller: _name,
+          textCapitalization: TextCapitalization.words,
+          decoration: const InputDecoration(labelText: 'Stop name'),
+          validator: (v) => (v ?? '').trim().isEmpty ? 'Enter a name' : null,
+        ),
+        const SizedBox(height: 12),
+        TextFormField(
+          controller: _day,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(labelText: 'Day (optional)'),
+          validator: (v) {
+            final text = (v ?? '').trim();
+            if (text.isEmpty) return null;
+            final day = int.tryParse(text);
+            return day == null || day < 1 ? 'Enter a day number, like 2' : null;
+          },
+        ),
+        const SizedBox(height: 12),
+        TextFormField(
+          controller: _notes,
+          maxLines: 2,
+          textCapitalization: TextCapitalization.sentences,
+          decoration: const InputDecoration(labelText: 'Notes (optional)'),
+        ),
+        const SizedBox(height: 20),
+        ElevatedButton(
+          key: const Key('stop-save'),
+          onPressed: _save,
+          child: Text(widget.stop == null ? 'Add to timeline' : 'Save changes', style: txt(15, weight: 700, color: Colors.black)),
         ),
       ]),
     );

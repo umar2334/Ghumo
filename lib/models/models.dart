@@ -1,305 +1,232 @@
-class Expedition {
-  final String id;
-  final String name;
-  final String location;
-  final String imageUrl;
-  final double rating;
-  final String difficulty;
-  final String duration;
-  final List<String> tags;
-  final String description;
-  final double lat;
-  final double lon;
-  bool isSaved;
+import 'package:flutter/material.dart';
 
-  Expedition({
+enum DestinationCategory {
+  mountains('Mountains', Icons.terrain_rounded, Color(0xFF1E3A5C)),
+  valleys('Valleys & Lakes', Icons.water_rounded, Color(0xFF1A4A3C)),
+  heritage('History', Icons.account_balance_rounded, Color(0xFF4A3218)),
+  cities('Cities', Icons.location_city_rounded, Color(0xFF34284E)),
+  coast('Coast', Icons.beach_access_rounded, Color(0xFF144A5A));
+
+  const DestinationCategory(this.label, this.icon, this.color);
+  final String label;
+  final IconData icon;
+  final Color color;
+}
+
+/// Editorial destination information bundled with the app, so it works offline.
+class Destination {
+  const Destination({
     required this.id,
     required this.name,
-    required this.location,
-    required this.imageUrl,
-    required this.rating,
-    required this.difficulty,
-    required this.duration,
-    required this.tags,
-    required this.description,
+    required this.region,
+    required this.category,
     required this.lat,
     required this.lon,
-    this.isSaved = false,
-  });
-}
-
-class WeatherData {
-  final double temperature;
-  final int weatherCode;
-  final double windspeed;
-
-  const WeatherData({
-    required this.temperature,
-    required this.weatherCode,
-    required this.windspeed,
+    required this.elevationM,
+    required this.difficulty,
+    required this.suggestedStay,
+    required this.bestSeason,
+    required this.description,
+    required this.highlights,
+    required this.gettingThere,
   });
 
-  String get icon {
-    if (weatherCode == 0) return '☀️';
-    if (weatherCode <= 3) return '⛅';
-    if (weatherCode <= 48) return '🌫️';
-    if (weatherCode <= 67) return '🌧️';
-    if (weatherCode <= 77) return '❄️';
-    if (weatherCode <= 82) return '🌦️';
-    if (weatherCode <= 86) return '🌨️';
-    return '⛈️';
-  }
-
-  String get tempStr => '${temperature.round()}°C';
-}
-
-class ExpenseItem {
   final String id;
-  final String title;
-  final String date;
-  final String category;
-  double amount;
-  final String emoji;
+  final String name;
+  final String region;
+  final DestinationCategory category;
+  final double lat;
+  final double lon;
 
-  ExpenseItem({
+  /// Approximate elevation of the main settlement or site, in metres.
+  final int elevationM;
+  final String difficulty;
+  final String suggestedStay;
+  final String bestSeason;
+  final String description;
+  final List<String> highlights;
+  final String gettingThere;
+
+  bool matches(String query) {
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) return true;
+    return name.toLowerCase().contains(q) ||
+        region.toLowerCase().contains(q) ||
+        category.label.toLowerCase().contains(q) ||
+        highlights.any((h) => h.toLowerCase().contains(q));
+  }
+}
+
+enum ExpenseCategory {
+  stay('Stay', Icons.hotel_rounded, Color(0xFFFF8855)),
+  transport('Transport', Icons.directions_car_rounded, Color(0xFF5C9DFF)),
+  food('Food & drink', Icons.restaurant_rounded, AppPalette.amber),
+  activities('Activities', Icons.hiking_rounded, Color(0xFF44CC88)),
+  shopping('Shopping', Icons.shopping_bag_rounded, Color(0xFFCC88FF)),
+  medical('Medical', Icons.medical_services_rounded, Color(0xFF44CCCC)),
+  other('Other', Icons.more_horiz_rounded, Color(0xFF9CCDBB));
+
+  const ExpenseCategory(this.label, this.icon, this.color);
+  final String label;
+  final IconData icon;
+  final Color color;
+
+  static ExpenseCategory fromName(String? name) => ExpenseCategory.values
+      .firstWhere((c) => c.name == name, orElse: () => ExpenseCategory.other);
+}
+
+class AppPalette {
+  static const Color amber = Color(0xFFF2B759);
+}
+
+class Expense {
+  Expense({
     required this.id,
     required this.title,
-    required this.date,
-    required this.category,
     required this.amount,
-    required this.emoji,
+    required this.category,
+    required this.date,
   });
+
+  final String id;
+  String title;
+  double amount;
+  ExpenseCategory category;
+  DateTime date;
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'title': title,
+        'amount': amount,
+        'category': category.name,
+        'date': date.toIso8601String(),
+      };
+
+  factory Expense.fromJson(Map<String, dynamic> j) => Expense(
+        id: j['id'] as String,
+        title: j['title'] as String,
+        amount: (j['amount'] as num).toDouble(),
+        category: ExpenseCategory.fromName(j['category'] as String?),
+        date: DateTime.parse(j['date'] as String),
+      );
 }
 
 class TripStop {
-  int number;
-  String phase;
-  String name;
-  String? description;
-  String? temperature;
-  String? hotel;
-  String? activity;
-  List<String>? tags;
-  bool isCompleted;
-  bool isInProgress;
-
   TripStop({
-    required this.number,
-    required this.phase,
+    required this.id,
     required this.name,
-    this.description,
-    this.temperature,
-    this.hotel,
-    this.activity,
-    this.tags,
-    this.isCompleted = false,
-    this.isInProgress = false,
+    this.day,
+    this.notes,
+    this.destinationId,
+    this.done = false,
   });
+
+  final String id;
+  String name;
+  int? day;
+  String? notes;
+  String? destinationId;
+  bool done;
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'day': day,
+        'notes': notes,
+        'destinationId': destinationId,
+        'done': done,
+      };
+
+  factory TripStop.fromJson(Map<String, dynamic> j) => TripStop(
+        id: j['id'] as String,
+        name: j['name'] as String,
+        day: (j['day'] as num?)?.toInt(),
+        notes: j['notes'] as String?,
+        destinationId: j['destinationId'] as String?,
+        done: j['done'] as bool? ?? false,
+      );
 }
 
-class MapRegion {
-  final String name;
-  final String size;
-  String detail;
-  bool isDownloaded;
-  double downloadProgress;
-
-  MapRegion({
+class Trip {
+  Trip({
+    required this.id,
     required this.name,
-    required this.size,
-    required this.detail,
-    this.isDownloaded = false,
-    this.downloadProgress = 0.0,
-  });
+    required this.budget,
+    this.destinationId,
+    this.isSample = false,
+    List<TripStop>? stops,
+    List<Expense>? expenses,
+  })  : stops = stops ?? [],
+        expenses = expenses ?? [];
+
+  final String id;
+  String name;
+  double budget;
+  String? destinationId;
+
+  /// Sample trips are labelled in the UI so demo data is never mistaken for
+  /// the user's own.
+  final bool isSample;
+  final List<TripStop> stops;
+  final List<Expense> expenses;
+
+  double get totalSpent => expenses.fold(0.0, (sum, e) => sum + e.amount);
+  double get remaining => budget - totalSpent;
+  bool get isOverBudget => remaining < 0;
+  double get budgetUsed =>
+      budget > 0 ? (totalSpent / budget).clamp(0.0, 1.0) : 0.0;
+  int get completedStops => stops.where((s) => s.done).length;
+
+  /// Spend per category, largest first.
+  List<MapEntry<ExpenseCategory, double>> get spendByCategory {
+    final totals = <ExpenseCategory, double>{};
+    for (final e in expenses) {
+      totals[e.category] = (totals[e.category] ?? 0) + e.amount;
+    }
+    return totals.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+  }
+
+  /// Expenses, most recent first.
+  List<Expense> get expensesByDate =>
+      [...expenses]..sort((a, b) => b.date.compareTo(a.date));
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'budget': budget,
+        'destinationId': destinationId,
+        'isSample': isSample,
+        'stops': stops.map((s) => s.toJson()).toList(),
+        'expenses': expenses.map((e) => e.toJson()).toList(),
+      };
+
+  factory Trip.fromJson(Map<String, dynamic> j) => Trip(
+        id: j['id'] as String,
+        name: j['name'] as String,
+        budget: (j['budget'] as num).toDouble(),
+        destinationId: j['destinationId'] as String?,
+        isSample: j['isSample'] as bool? ?? false,
+        stops: (j['stops'] as List? ?? [])
+            .map((s) => TripStop.fromJson(s as Map<String, dynamic>))
+            .toList(),
+        expenses: (j['expenses'] as List? ?? [])
+            .map((e) => Expense.fromJson(e as Map<String, dynamic>))
+            .toList(),
+      );
 }
 
-// ─── Sample data ────────────────────────────────────────────────────────────
+class ChecklistItem {
+  ChecklistItem({required this.id, required this.label, this.checked = false});
 
-List<Expedition> featuredExpeditions = [
-  Expedition(
-    id: '1',
-    name: 'HUNZA',
-    location: 'Gilgit-Baltistan',
-    imageUrl: '',
-    rating: 4.8,
-    difficulty: 'Moderate',
-    duration: '7 Days',
-    tags: ['Mountains', 'Culture', 'Trekking'],
-    description:
-        'Explore the breathtaking Hunza Valley with its ancient forts, crystal-clear Attabad Lake, and majestic views of Rakaposhi. Home to the Aga Khan\'s heritage.',
-    lat: 36.3167,
-    lon: 74.6500,
-  ),
-  Expedition(
-    id: '2',
-    name: 'SKARDU',
-    location: 'Gilgit-Baltistan',
-    imageUrl: '',
-    rating: 4.9,
-    difficulty: 'Challenging',
-    duration: '10 Days',
-    tags: ['K2', 'Glaciers', 'Adventure'],
-    description:
-        "Gateway to the world's highest peaks and most spectacular glaciers including Baltoro and Siachen. Base for K2 expeditions.",
-    lat: 35.2971,
-    lon: 75.6130,
-  ),
-  Expedition(
-    id: '3',
-    name: 'SWAT',
-    location: 'KPK, Pakistan',
-    imageUrl: '',
-    rating: 4.6,
-    difficulty: 'Easy',
-    duration: '5 Days',
-    tags: ['Valley', 'History', 'Scenic'],
-    description:
-        'The Switzerland of the East. Lush valleys, roaring rivers, and rich Buddhist history. Visit Mingora, Malam Jabba, and Kalam.',
-    lat: 35.2227,
-    lon: 72.4258,
-  ),
-  Expedition(
-    id: '4',
-    name: 'NARAN',
-    location: 'Mansehra, KPK',
-    imageUrl: '',
-    rating: 4.7,
-    difficulty: 'Easy',
-    duration: '4 Days',
-    tags: ['Scenic', 'Lakes', 'Nature'],
-    description:
-        'Home to the stunning Saif ul Malook Lake and gateway to Babusar Pass. Drive through the Kaghan Valley alongside the Kunhar River.',
-    lat: 34.9041,
-    lon: 73.6514,
-  ),
-  Expedition(
-    id: '5',
-    name: 'FAIRY MEADOWS',
-    location: 'Diamer, GB',
-    imageUrl: '',
-    rating: 4.9,
-    difficulty: 'Challenging',
-    duration: '6 Days',
-    tags: ['Trekking', 'Camping', 'Adventure'],
-    description:
-        "Meadows at the base of Nanga Parbat — the world's 9th highest peak. Accessible only by a steep jeep track and a 3-hour hike.",
-    lat: 35.3736,
-    lon: 74.5783,
-  ),
-];
+  final String id;
+  final String label;
+  bool checked;
 
-List<ExpenseItem> recentExpenses = [
-  ExpenseItem(
-      id: '1',
-      title: 'Karakoram Hotel',
-      date: '14 OCT, 2023',
-      category: 'ACCOMMODATION',
-      amount: 120.00,
-      emoji: '🏨'),
-  ExpenseItem(
-      id: '2',
-      title: 'PSO Fuel Skardu',
-      date: '13 OCT, 2023',
-      category: 'TRANSPORT',
-      amount: 45.00,
-      emoji: '⛽'),
-  ExpenseItem(
-      id: '3',
-      title: 'Local Dhaba Dinner',
-      date: '13 OCT, 2023',
-      category: 'FOOD & DRINK',
-      amount: 18.50,
-      emoji: '🍛'),
-  ExpenseItem(
-      id: '4',
-      title: 'Gift Shop Hunza',
-      date: '12 OCT, 2023',
-      category: 'SOUVENIRS',
-      amount: 35.00,
-      emoji: '🛍️'),
-];
+  Map<String, dynamic> toJson() => {'id': id, 'label': label, 'checked': checked};
 
-List<TripStop> tripStops = [
-  TripStop(
-    number: 1,
-    phase: 'ARRIVAL',
-    name: 'ATTABAD LAKE',
-    temperature: '8°C CRYSTAL CLEAR',
-    hotel: 'Luxus Grand',
-    activity: 'Jet Skiing',
-    isCompleted: true,
-  ),
-  TripStop(
-    number: 2,
-    phase: 'HIGH PEAKS',
-    name: 'Passu Cones Exploration',
-    description:
-        'A morning drive towards the iconic cathedral peaks, followed by a walk along the Hunza river edge...',
-    tags: ['TREKKING', 'PHOTOGRAPHY', '4X4 JEEP'],
-    isInProgress: true,
-  ),
-  TripStop(
-    number: 3,
-    phase: 'GLACIER WALK',
-    name: 'Baltit Fort',
-    isCompleted: false,
-  ),
-];
-
-List<MapRegion> mapRegions = [
-  MapRegion(
-      name: 'Hunza Valley',
-      size: '120MB',
-      detail: 'High Detail',
-      isDownloaded: false,
-      downloadProgress: 0.0),
-  MapRegion(
-      name: 'Skardu & Baltistan',
-      size: '185MB',
-      detail: 'Downloaded',
-      isDownloaded: true,
-      downloadProgress: 1.0),
-  MapRegion(
-      name: 'Swat Valley',
-      size: '95MB',
-      detail: 'Mid Detail',
-      isDownloaded: false,
-      downloadProgress: 0.0),
-  MapRegion(
-      name: 'Gilgit City',
-      size: '45MB',
-      detail: 'Navigation only',
-      isDownloaded: false,
-      downloadProgress: 0.0),
-];
-
-const List<String> expenseCategories = [
-  'ACCOMMODATION',
-  'TRANSPORT',
-  'FOOD & DRINK',
-  'ACTIVITIES',
-  'SOUVENIRS',
-  'SHOPPING',
-  'MEDICAL',
-  'OTHER',
-];
-
-const Map<String, String> categoryEmojis = {
-  'ACCOMMODATION': '🏨',
-  'TRANSPORT': '🚗',
-  'FOOD & DRINK': '🍛',
-  'ACTIVITIES': '🧗',
-  'SOUVENIRS': '🛍️',
-  'SHOPPING': '🛒',
-  'MEDICAL': '💊',
-  'OTHER': '📦',
-};
-
-const List<String> tripPhases = [
-  'ARRIVAL',
-  'TRANSIT',
-  'HIGH PEAKS',
-  'GLACIER WALK',
-  'SIGHTSEEING',
-  'DEPARTURE',
-];
+  factory ChecklistItem.fromJson(Map<String, dynamic> j) => ChecklistItem(
+        id: j['id'] as String,
+        label: j['label'] as String,
+        checked: j['checked'] as bool? ?? false,
+      );
+}

@@ -1,11 +1,11 @@
 {
-    "name": "ghumo",
-    "short_name": "ghumo",
+    "name": "Ghumo",
+    "short_name": "Ghumo",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#060F0C",
+    "theme_color": "#060F0C",
+    "description": "A travel companion for exploring Pakistan.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
